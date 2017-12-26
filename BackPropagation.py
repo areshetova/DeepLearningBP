@@ -7,8 +7,6 @@ import numpy as np
 
 from urllib.request import urlretrieve
 
-import NeuralNetwork as nn
-
 def download(filename, source='http://yann.lecun.com/exdb/mnist/'):
     print("Downloading %s" % filename)
     urlretrieve(source + filename, filename)
@@ -58,10 +56,14 @@ def main():
         train_speed = float(args[idx+1])
     else:
         train_speed = 0.005
+    if '-e' in args:
+        idx = args.index('-e')
+        max_epochs = int(args[idx+1])
+    else:
+        max_epochs = 25
 
     input_neurons = 28 * 28
     output_neurons = 10
-    max_epochs = 15
     cross_error = 0.005
 
     X_train = download_images('train-images-idx3-ubyte.gz')
