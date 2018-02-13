@@ -7,207 +7,157 @@ import numpy as np
 
 from urllib.request import urlretrieve
 
-def download(filename, source='http://yann.lecun.com/exdb/mnist/'):
-    print("Downloading %s" % filename)
-    urlretrieve(source + filename, filename)
-        
+def download(filename, source, target_file):
+    urlretrieve(source + filename, target_file)
+
 def download_images(filename):
-    if not os.path.exists(filename):
-        download(filename)
-    with gzip.open(filename, 'rb') as f:
-        data = np.frombuffer(f.read(), np.uint8, offset=16)
-    data = data.reshape(-1, 784)
-    return data / np.float32(256)
+    with gzip.open(filename, 'rb') as file:
+        data = np.frombuffer(file.read(), np.uint8, offset=16)
+        img_data = data.reshape(-1, 784)
+    return img_data
 
 def download_labels(filename):
-    if not os.path.exists(filename):
-        download(filename)
-    with gzip.open(filename, 'rb') as f:
-        data = np.frombuffer(f.read(), np.uint8, offset=8)
-    n = len(data)
-    no = max(data)
-    labels = np.zeros(shape=[n,no+1], dtype=np.float32)
-    for i in range(n):
-        vec = np.zeros(shape=[no+1], dtype=np.float32)
-        vec[data[i]] = 1
-        labels[i] = vec
-    return labels
+    with gzip.open(filename, 'rb') as file:
+        data = np.frombuffer(file.read(), np.uint8, offset=8)
+    return data
+
+def download_images_label_pair(images_file, labels_file):
+    images_file_on_disk = "./Data_folder/" + images_file
+    if not os.path.exists(images_file_on_disk):
+        download(images_file, "http://yann.lecun.com/exdb/mnist/", images_file_on_disk)
+    images = download_images(images_file_on_disk)
+    labels_file_on_disk = "./Data_folder/" + labels_file
+    if not os.path.exists(labels_file_on_disk):
+        download(labels_file, "http://yann.lecun.com/exdb/mnist/", labels_file_on_disk)
+    labels = download_labels(labels_file_on_disk)
+    return images, labels
+
+def retrieve_sample_data():
+    if not os.path.exists("./Data_folder/"):
+        os.makedirs("./Data_folder/")
+    train_imgs, train_lbls = download_images_label_pair("train-images-idx3-ubyte.gz", "train-labels-idx1-ubyte.gz")
+    test_imgs, test_lbls = download_images_label_pair("t10k-images-idx3-ubyte.gz", "t10k-labels-idx1-ubyte.gz")
+    return train_imgs, train_lbls, test_imgs, test_lbls
+
+def normalize(image: np.array):
+    return image / 255.0
+
+def convert_number_to_array(y_list, classes):
+    result = []
+    for value in y_list:
+        array_from_value = np.zeros(classes)
+        array_from_value[value] = 1
+        result.append(array_from_value)
+    return np.array(result)
 
 def main():
     args = sys.argv
-
-    if '-n' in args:
-        idx = args.index('-n')
-        train_im = int(args[idx+1])
-    else:
-        train_im = 1000
-    if '-t' in args:
-        idx = args.index('-t')
-        test_im = int(args[idx+1])
-    else:
-        test_im = 100
+    
+    np.random.seed(13)
     if '-s' in args:
         idx = args.index('-s')
-        hidden_neurons = int(args[idx+1])
+        neuron_count = int(args[idx+1])
     else:
-        hidden_neurons = 100
+        neuron_count = 100
+    y_classes = 10
+    range_of_weights = (0.003, 0.007)
     if '-l' in args:
         idx = args.index('-l')
         train_speed = float(args[idx+1])
     else:
-        train_speed = 0.005
+        train_speed = 0.05
     if '-e' in args:
         idx = args.index('-e')
-        max_epochs = int(args[idx+1])
+        max_epoch = int(args[idx+1])
     else:
-        max_epochs = 25
+        max_epoch = 25
+    if '-a' in args:
+        idx = args.index('-a')
+        max_accuracy = float(args[idx+1])
+    else:
+        max_accuracy = 0.99
 
-    input_neurons = 28 * 28
-    output_neurons = 10
-    cross_error = 0.005
+    def accuracy(X_array: np.array, y_array: np.array, weightes_hidden_layer :np.array, weightes_output_layer :np.array):
+        true_classifications = 0
+        for x, y in zip(X_array, y_array):
+            label = np.argmax(y)
+            hidden_level = sigmoid(np.dot(weightes_hidden_layer, x))
+            output_level = softmax(np.dot(weightes_output_layer, hidden_level))
+            prediction = np.argmax(output_level)
+            if (prediction == label):
+                true_classifications += 1
+        return true_classifications / X_array.shape[0]
 
-    X_train = download_images('train-images-idx3-ubyte.gz')
-    t_train = download_labels('train-labels-idx1-ubyte.gz')
-    X_test = download_images('t10k-images-idx3-ubyte.gz')
-    t_test = download_labels('t10k-labels-idx1-ubyte.gz')
-
-    X_train = X_train[0:train_im]
-    t_train = t_train[0:train_im]
-
-    X_test = X_test[0:test_im]
-    t_test = t_test[0:test_im]
-
-    inputNodes = np.zeros(shape=[input_neurons], dtype=np.float32)
-    hiddenNodes = np.zeros(shape=[hidden_neurons], dtype=np.float32)
-    outputNodes = np.zeros(shape=[output_neurons], dtype=np.float32)
-
-    input_hidden_weights = np.zeros(shape=[input_neurons,hidden_neurons], dtype=np.float32)
-    hidden_output_weights = np.zeros(shape=[hidden_neurons,output_neurons], dtype=np.float32)
-
-    hBiases = np.zeros(shape=[hidden_neurons], dtype=np.float32)
-    oBiases = np.zeros(shape=[output_neurons], dtype=np.float32)
-
-    rnd = random.Random(10)
-
-    for i in range(input_neurons):
-        for j in range(hidden_neurons):
-            input_hidden_weights[i,j] = 0.5 * rnd.random()
-    for i in range(hidden_neurons):
-        for j in range(output_neurons):
-            hidden_output_weights[i,j] = 0.5 * rnd.random()
-    for i in range(hidden_neurons):
-        hBiases[i] = 0.5 * rnd.random()
-    for i in range(output_neurons):
-        oBiases[i] = 0.5 * rnd.random()
-
-    def computeOutputs(xValues):
-        hSums = np.zeros(shape=[hidden_neurons], dtype=np.float32)
-        oSums = np.zeros(shape=[output_neurons], dtype=np.float32)
-
-        for i in range(input_neurons):
-            inputNodes[i] = xValues[i]
-
-        for i in range(hidden_neurons):
-            for j in range(input_neurons):
-                hSums[i] += inputNodes[j] * input_hidden_weights[j,i]
-            hSums[i] += hBiases[i]
-
-        for i in range(hidden_neurons):
-            hiddenNodes[i] = hypertan(hSums[i])
-
-        for i in range(output_neurons):
-            for j in range(hidden_neurons):
-                oSums[i] += hiddenNodes[j] * hidden_output_weights[j,i]
-            oSums[i] += oBiases[i]
-
-        softOut = softmax(oSums)
-        for i in range(output_neurons):
-            outputNodes[i] = softOut[i]
-        return outputNodes
-
-    def computeGradient(t_values, oGrads, hGrads):
-        for i in range(output_neurons):
-            oGrads[i] = (t_values[i] - outputNodes[i])
-
-        for i in range(hidden_neurons):
-            derivative = (1 - hiddenNodes[i]) * (1 + hiddenNodes[i]);
-            sum_ = 0.0
-            for j in range(output_neurons):
-                sum_ += oGrads[j] * hidden_output_weights[i, j]
-            hGrads[i] = derivative * sum_
-
-    def updateWeightsAndBiases(learnRate, hGrads, oGrads):
-        for i in range(input_neurons):
-            for j in range(hidden_neurons):
-                input_hidden_weights[i,j] += learnRate * hGrads[j] * inputNodes[i]
-        for i in range(hidden_neurons):
-            for j in range(output_neurons):
-                hidden_output_weights[i,j] += learnRate * oGrads[j] * hiddenNodes[i];
-
-        for i in range(hidden_neurons):
-            hBiases[i] += learnRate * hGrads[i] * 1.0
-        for i in range(output_neurons):
-            oBiases[i] += learnRate * oGrads[i] * 1.0
-
-    def crossEntropyError(x_values, t_values):
+    def crossEntropyError(X_array: np.array, y_array: np.array, weightes_hidden_layer :np.array, weightes_output_layer :np.array):
         sumError = 0.0
-        for i in range(len(x_values)):
-            y_values = computeOutputs(x_values[i])
-            for j in range(output_neurons):
-                sumError += math.log(y_values[j]) * t_values[i][j]
-        return -1.0 * sumError / len(x_values)
+        for i in range(len(X_array)):
+            hidden_level = sigmoid(np.dot(weightes_hidden_layer, X_array[i]))
+            output_level = softmax(np.dot(weightes_output_layer, hidden_level))
+            for j in range(len(y_array)):
+                sumError += math.log(output_level) * y_array[j]
+        return -1.0 * sumError / len(X_array)
+  
+    def sigmoid(x):
+        return 1./(1. + np.exp(-x))
 
-    def accuracy(x_values, t_values):
-        num_correct = 0
-        num_wrong = 0
-        for i in range(len(x_values)):
-            y_values = computeOutputs(x_values[i])
-            max_index = np.argmax(y_values)
-            if abs(t_values[i][max_index] - 1.0) < 1.0e-5:
-                num_correct += 1
-            else:
-                num_wrong += 1
-        return (num_correct * 1.0) / (num_correct + num_wrong)*100
+    def sigmoid_grad(x):
+        return x * (1. - x)
 
-    def train(x_values, t_values, maxEpochs, learnRate, crossError):
-        hGrads = np.zeros(shape=[hidden_neurons], dtype=np.float32)
-        oGrads = np.zeros(shape=[output_neurons], dtype=np.float32)
-        rand_indicies = np.arange(len(x_values))
-        for epoch in range(maxEpochs):
-            print("Epoch ", epoch)
-            np.random.shuffle(rand_indicies)
-            x_values = x_values[rand_indicies]
-            t_values = t_values[rand_indicies]
+    def softmax(x):
+        max_value = np.max(x)
+        shifted_args = x - max_value
+        exps = np.exp(shifted_args)
+        return exps / np.sum(exps)
 
-            for i in range(len(x_values)):
-                outputNodes = computeOutputs(x_values[i])
-                computeGradient(t_values[i], oGrads, hGrads)
-                updateWeightsAndBiases(learnRate, hGrads, oGrads)
-            currentCrossError = crossEntropyError(x_values, t_values)
-            if (currentCrossError < crossError):
-                return;
+    def softmax_grad(x):
+        return x * (1. - x)
+
+    def initialize_weights(size: np.array, val_range: np.array):
+        return val_range[0] + (val_range[1]-val_range[0])*np.random.random((size[0], size[1]))
+ 
+    print("Downloading")
+    train_data, train_labels, test_data, test_labels = retrieve_sample_data()
+    X_train = np.array([normalize(np.array(image)) for image in train_data])
+    y_train = convert_number_to_array(train_labels, y_classes)
+    X_test = np.array([normalize(np.array(image)) for image in test_data])
+    y_test = convert_number_to_array(test_labels, y_classes)
+    
+    x_params_count = X_train.shape[1]
+    weightes_hidden_layer = initialize_weights((neuron_count, x_params_count), range_of_weights)    
+    weightes_output_layer = initialize_weights((y_classes, neuron_count), range_of_weights)
+
+    print("Training:")
+    for epoch in range(max_epoch):
+        for x, y in zip(X_train, y_train):
+            # forward propagation
+            weighted_input_hidden_layer = np.dot(weightes_hidden_layer, x)
+            hidden_layer_output = sigmoid(weighted_input_hidden_layer)
             
-    def hypertan(x):
-        if x < -20.0:
-            return -1.0
-        elif x > 20.0:
-            return 1.0
-        else:
-            return math.tanh(x)
+            weighted_input_output_layer = np.dot(weightes_output_layer, hidden_layer_output)
+            final_layer_output = softmax(weighted_input_output_layer)
+            
+            # backward propagation
+            final_level_error = final_layer_output - y
+            final_level_transferred_error = weightes_output_layer.T.dot(final_level_error)
+            
+            hidden_level_error = final_level_transferred_error * softmax_grad(hidden_layer_output)
+            
+            # update weights
+            weightes_output_layer -= train_speed * np.outer(final_level_error, hidden_layer_output)
+            
+            weightes_hidden_layer -= train_speed * np.outer(hidden_level_error, x)            
+        
+        current_accuracy = accuracy(X_train, y_train, weightes_hidden_layer, weightes_output_layer)
+        #current_error = crossEntropyError(X_train, y_train, weightes_hidden_layer, weightes_output_layer)
+        
+        print("  Epoch {0}: accuracy = {1}".format(epoch+1, current_accuracy))
+        if (current_accuracy > max_accuracy):
+            print("Maximum accuracy achieved")
+            break
 
-    def softmax(oSums):
-        result = np.zeros(shape=[len(oSums)], dtype=np.float32)
-        max_ = max(oSums)
-        divisor = 0.0
-        for elem in oSums:
-            divisor += math.exp(elem - max_)
-        for i,elem in enumerate(oSums):
-            result[i] =  math.exp(elem - max_) / divisor
-        return result
-	
-    train(X_train, t_train, max_epochs, train_speed, cross_error)
-
-    print("Train: ", accuracy(X_train, t_train), "% Test:", accuracy(X_test, t_test), "%")
+    print("Testing:")
+    result_accuracy = accuracy(X_test, y_test, weightes_hidden_layer, weightes_output_layer)
+    print("Test accuracy = {0}".format(result_accuracy))
 
 if __name__ == '__main__':
     main()
