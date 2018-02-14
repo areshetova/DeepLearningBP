@@ -88,14 +88,11 @@ def main():
                 true_classifications += 1
         return true_classifications / X_array.shape[0]
 
-    def crossEntropyError(X_array: np.array, y_array: np.array, weightes_hidden_layer :np.array, weightes_output_layer :np.array):
+    def Cross_entropy_error(y_array: np.array, t_array: np.array):
         sumError = 0.0
-        for i in range(len(X_array)):
-            hidden_level = sigmoid(np.dot(weightes_hidden_layer, X_array[i]))
-            output_level = softmax(np.dot(weightes_output_layer, hidden_level))
-            for j in range(len(y_array)):
-                sumError += math.log(output_level) * y_array[j]
-        return -1.0 * sumError / len(X_array)
+        for i in range(len(t_array)):
+            sumError += math.log(y_array[i]) * t_array[j]
+        return -1.0 * sumError
   
     def sigmoid(x):
         return 1./(1. + np.exp(-x))
@@ -148,7 +145,6 @@ def main():
             weightes_hidden_layer -= train_speed * np.outer(hidden_level_error, x)            
         
         current_accuracy = accuracy(X_train, y_train, weightes_hidden_layer, weightes_output_layer)
-        #current_error = crossEntropyError(X_train, y_train, weightes_hidden_layer, weightes_output_layer)
         
         print("  Epoch {0}: accuracy = {1}".format(epoch+1, current_accuracy))
         if (current_accuracy > max_accuracy):
